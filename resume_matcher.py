@@ -1,30 +1,50 @@
+import pandas as pd
+import joblib
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score
 
-# Sample resume text
-resume = """
-Python Developer with expertise in Machine Learning, Data Science, and SQL.
-Worked for 3 years in XYZ Corp. 
-Education: Bachelor's in Computer Science.
-"""
+# Load resumes
+try:
+    resumes = pd.read_csv("resumes_new.csv", usecols=["Category", "Resume"])
+    resumes.rename(columns={"Category": "category", "Resume": "resume_text"}, inplace=True)
+    print("Resumes loaded successfully.")
+except FileNotFoundError as e:
+    print("Error: resumes_new.csv not found.", e)
+    exit()
+except pd.errors.EmptyDataError:
+    print("Error: resumes_new.csv is empty.")
+    exit()
+except pd.errors.ParserError:
+    print("Error: CSV parsing issue. Check file format.")
+    exit()
 
-# Sample job descriptions
-job_descriptions = [
-    "Looking for a Python Developer skilled in Machine Learning and SQL.",
-    "Hiring a Software Engineer with experience in Java and Cloud Computing.",
-    "Data Scientist needed with expertise in Python, Data Science, and AI."
-]
+# Debugging: Check for missing values and unique categories
+print("Missing values:\n", resumes.isnull().sum())
+print("Unique categories:\n", resumes["category"].unique())
 
-# Convert text into numerical vectors using TF-IDF
+# Convert text into numerical representation
 vectorizer = TfidfVectorizer()
-vectors = vectorizer.fit_transform([resume] + job_descriptions)
+X = vectorizer.fit_transform(resumes["resume_text"])
+y = resumes["category"]
 
-# Compute similarity scores
-similarities = cosine_similarity(vectors[0], vectors[1:])
+# Train-test split
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-# Rank jobs by similarity score
-job_matches = sorted(enumerate(similarities[0]), key=lambda x: x[1], reverse=True)
+# Train model
+classifier = RandomForestClassifier()
+classifier.fit(X_train, y_train)
 
-print("Job Matching Scores:")
-for idx, score in job_matches:
-    print(f"Job {idx+1}: {job_descriptions[idx]} (Score: {score:.2f})")
+# Save model and vectorizer
+joblib.dump(classifier, "resume_classifier.pkl")
+joblib.dump(vectorizer, "tfidf_vectorizer.pkl")
+
+# Evaluate model
+y_pred = classifier.predict(X_test)
+print("Accuracy:", accuracy_score(y_test, y_pred))
+
+# Debugging prints
+print("Sample Resumes:\n", resumes.head())
+print("Feature Matrix Shape:", X.shape)
+print("Labels Distribution:\n", y.value_counts())
