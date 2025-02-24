@@ -1,23 +1,22 @@
 import pandas as pd
 import spacy
-from sklearn.model_selection import train_test_split, cross_val_score, KFold
+from sklearn.model_selection import train_test_split, cross_val_score, KFold, GridSearchCV
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.preprocessing import LabelEncoder
-from sklearn.feature_extraction.text import TfidfVectorizer
-
-from sklearn.metrics import precision_score, recall_score, f1_score
+from sklearn.preprocessing import LabelEncoder, TfidfVectorizer
+from sklearn.metrics import precision_score, recall_score, f1_score, confusion_matrix
 from sklearn.neighbors import NearestNeighbors
 import numpy as np
+from sentence_transformers import SentenceTransformer
 
 # Load spaCy model for NLP
 nlp = spacy.load("en_core_web_sm")
+model = SentenceTransformer('all-MiniLM-L6-v2')
 
 def extract_skills(text):
     doc = nlp(text)
-    skills = [ent.text.lower() for ent in doc.ents if ent.label_ in ["ORG", "PRODUCT", "SKILL"]]
+    skills = [ent.text.lower() for ent in doc.ents if ent.label_ in ["ORG", "PRODUCT"]]
     return list(set(skills))
 
-# Sample DataFrame with synthetic resumes
 data = {
     'Name': ['Alice', 'Bob', 'Charlie', 'David', 'Eva', 'Frank', 'Grace', 'Hank', 'Ivy', 'Jack'],
     'Skills': [
@@ -38,43 +37,40 @@ data = {
 }
 df = pd.DataFrame(data)
 
-# Extract skills using NLP
 df['Extracted_Skills'] = df['Skills'].apply(extract_skills)
 
-# Convert education to numeric levels
 def map_education(edu):
     return 2 if "Master" in edu else 1
 
 df['Education_Level'] = df['Education'].apply(map_education)
 
-# TF-IDF Vectorization of Skills
-tfidf = TfidfVectorizer()
-skill_matrix = tfidf.fit_transform(df['Skills'])
-
-# Convert to dense format for modeling
-X = np.hstack((df[['Experience', 'Education_Level']].values, skill_matrix.toarray()))
+# Sentence Embeddings for Skills
+skill_embeddings = np.array([model.encode(text) for text in df['Skills']])
+X = np.hstack((df[['Experience', 'Education_Level']].values, skill_embeddings))
 
 y = df['Job Title']
 label_encoder = LabelEncoder()
 y_encoded = label_encoder.fit_transform(y)
 
-# Train Random Forest Model
-clf = RandomForestClassifier(n_estimators=100, random_state=42, class_weight='balanced')
-kf = KFold(n_splits=3, shuffle=True, random_state=42)
-scores = cross_val_score(clf, X, y_encoded, cv=kf, scoring='accuracy')
+# Hyperparameter Tuning
+clf = RandomForestClassifier(random_state=42, class_weight='balanced')
+param_grid = {'n_estimators': [50, 100, 150], 'max_depth': [None, 10, 20]}
+grid_search = GridSearchCV(clf, param_grid, cv=3, scoring='accuracy')
+grid_search.fit(X, y_encoded)
+best_clf = grid_search.best_estimator_
 
-# Nearest Neighbor Matching for Resume-Job Similarity
+# Nearest Neighbor Matching
 nn = NearestNeighbors(n_neighbors=1, metric='cosine')
-nn.fit(skill_matrix)
-distances, indices = nn.kneighbors(skill_matrix)
+nn.fit(skill_embeddings)
+distances, indices = nn.kneighbors(skill_embeddings)
 
 # Evaluation
-clf.fit(X, y_encoded)
-y_pred = clf.predict(X)
+y_pred = best_clf.predict(X)
 precision = precision_score(y_encoded, y_pred, average='macro')
 recall = recall_score(y_encoded, y_pred, average='macro')
 f1 = f1_score(y_encoded, y_pred, average='macro')
+conf_matrix = confusion_matrix(y_encoded, y_pred)
 
-print(f"Cross-Validation Accuracy Scores: {scores}")
-print(f"Mean Accuracy: {scores.mean()}")
+print(f"Best Model Parameters: {grid_search.best_params_}")
 print(f"Precision: {precision}, Recall: {recall}, F1-Score: {f1}")
+print(f"Confusion Matrix:\n{conf_matrix}")
