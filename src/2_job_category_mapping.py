@@ -3,10 +3,11 @@ import pandas as pd
 # Load matched resumes dataset
 df = pd.read_csv("matched_resumes.csv")
 
-# Print unique job titles and their assigned numerical labels
+# Convert job titles to categorical type and create a mapping
 df["matched_job"] = df["matched_job"].astype("category")
-job_mapping = dict(enumerate(df["matched_job"].cat.categories))
+job_mapping = {idx: job for idx, job in enumerate(df["matched_job"].cat.categories)}
 
-print("Job Category Mapping:")
+# Print job category mapping
+print("\nJob Category Mapping:")
 for num, job in job_mapping.items():
     print(f"{num}: {job}")
